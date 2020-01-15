@@ -631,6 +631,8 @@ function [et,x,y] = fdtd2d(DATA,PAR)
     et              = zeros([size(Ez),length(PAR.f)]);
     alpha           = PAR.f*dt*number_of_time_steps;                        % Constant for Fourier transform
     
+    sample = [];
+    
     % Starting the simulation
     for time_step = 1:number_of_time_steps
 
@@ -785,6 +787,8 @@ function [et,x,y] = fdtd2d(DATA,PAR)
                 + CPsi_ezy_yp .* Psi_ezy_yp;
         end
 
+        sample = [sample,Ez(20,20)];
+        
 
         for f_indx = 1:length(PAR.f)
             et(:,:,f_indx) =  et(:,:,f_indx) + ...
@@ -805,5 +809,7 @@ function [et,x,y] = fdtd2d(DATA,PAR)
     et = et(xcoor>0&xcoor<=lx,ycoor>0&ycoor<=ly,:);
     x = xcoor(xcoor>0&xcoor<=lx);
     y = ycoor(ycoor>0&ycoor<=ly);
+    
+    plot(sample)
 
 end

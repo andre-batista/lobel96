@@ -102,8 +102,8 @@ class FDTD2D:
             pb_min_y = impressed_J[0].min_y
         elif pb_max_y < impressed_J[0].max_y:
             pb_max_y < impressed_J[0].max_y
-        self.domain.min_x, self.domain.max_x = pb_min_x-5*dx, pb_max_x+5*dx
-        self.domain.min_y, self.domain.max_y = pb_min_y-5*dy, pb_max_y+5*dy
+        self.domain.min_x, self.domain.max_x = np.floor(pb_min_x/dx)*dx, np.ceil(pb_max_x/dx)*dx
+        self.domain.min_y, self.domain.max_y = np.floor(pb_min_y/dy)*dy, np.ceil(pb_max_y/dy)*dy
         
         # Defining source parameters
         impressed_J[0].direction = 'zp'
@@ -176,10 +176,8 @@ class FDTD2D:
                 (ind+1 - 0.5) * dy + self.domain.min_y)
             
         # x and y coordinates for epsr and Ez matrices
-        xcoor = np.round(np.linspace(self.domain.min_x, 
-                                     self.domain.max_x, nxp1), 4)
-        ycoor = np.round(np.linspace(self.domain.min_y, 
-                                     self.domain.max_y, nyp1), 4)
+        xcoor = np.linspace(self.domain.min_x, self.domain.max_x, nxp1)
+        ycoor = np.linspace(self.domain.min_y, self.domain.max_y, nyp1)
         
         # TMz components
         if impressed_J[0].direction[0] is 'z':
@@ -360,6 +358,7 @@ class FDTD2D:
         current_time = 0
         aux = (Ez.shape, self.f.size)
         self.et = np.zeros(aux[0]+(aux[1], ), dtype = complex)
+        alpha = self.f*dt*number_of_time_steps
         for i in range(len(self.probes)):
             self.probes[i].allocate_signal(time)
                 
@@ -534,35 +533,36 @@ class FDTD2D:
                                   * self.boundary[3].Psi_e)
             
             if any_save_probe_signal:
+                fp = interpolate.RectBivariateSpline(xcoor, ycoor, Ez)
                 for i in range(len(self.probes)):
                     if self.probes[i].save_signal:
-                        fp = interpolate.RectBivariateSpline(xcoor, ycoor, Ez)
                         self.probes[i].append(fp(self.probes[i].position[0],
                                                  self.probes[i].position[1]))
                 
             for f_indx in range(self.f.size):
                 self.et[:, :, f_indx] = (
-                    self.et[:, :, f_indx] 
-                    + Ez*np.exp(-1j*2*np.pi*self.f[f_indx]*(time_step+1)*dt)*dt)
+                    self.et[:, :, f_indx] + Ez*np.exp(-1j*2*np.pi*alpha[f_indx]*(time_step-1)/number_of_time_steps))
+                    # + Ez*np.exp(-1j*2*np.pi*self.f[f_indx]*(time_step+1)*dt)*dt)
                 
+        self.et = 2*self.et/number_of_time_steps;
   
         for f_indx in range(self.f.size):
             fint_real = interpolate.RectBivariateSpline(xcoor, ycoor, np.real(self.et[:, :, f_indx]))
             fint_imag = interpolate.RectBivariateSpline(xcoor, ycoor, np.imag(self.et[:, :, f_indx]))
             for irx in range(len(self.probes)):
-                self.probes[irx].set_field_freq(fint_real(self.probes[i].position[0], 
-                                                          self.probes[i].position[1]) 
-                                                + 1j*fint_imag(self.probes[i].position[0], 
-                                                               self.probes[i].position[1]),
+                self.probes[irx].set_field_freq(fint_real(self.probes[irx].position[0], 
+                                                          self.probes[irx].position[1]) 
+                                                + 1j*fint_imag(self.probes[irx].position[0], 
+                                                               self.probes[irx].position[1]),
                                                 f_indx)
                 
         # Setting the total electric field according to user's domain
         self.et = self.et[np.ix_(
-            np.nonzero(np.logical_and(xcoor > 0, xcoor <= lx))[0], 
-            np.nonzero(np.logical_and(ycoor > 0, ycoor <= ly))[0], 
+            np.nonzero(np.logical_and(xcoor > -lx/2, xcoor <= lx/2))[0], 
+            np.nonzero(np.logical_and(ycoor > -ly/2, ycoor <= ly/2))[0], 
             range(self.f.size))]
-        self.x = xcoor[np.logical_and(xcoor > 0, xcoor <= lx)]
-        self.y = ycoor[np.logical_and(ycoor > 0, ycoor <= ly)]
+        self.x = xcoor[np.logical_and(xcoor > -lx/2, xcoor <= lx/2)]
+        self.y = ycoor[np.logical_and(ycoor > -ly/2, ycoor <= ly/2)]
         
         self.epsr = np.copy(epsr)
         self.sig = np.copy(sig)

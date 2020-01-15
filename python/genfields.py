@@ -21,6 +21,7 @@ import copy as cp
 import pickle
 from scipy import special as spl
 from scipy.spatial import distance as dst
+from matplotlib import pyplot as plt
 
 # Importing FDTD2D library
 import fdtd2d as slv
@@ -40,9 +41,9 @@ sampled_frequencies = np.array([800e6])
 wv_frequency = 800e6
 dtheta = 12
 M = round(360/dtheta)
-Rs = 14e-2
+Rs = 18e-2
 ls_x, ls_y = 4*dx, 4*dy
-magnitude = 1e1
+magnitude = 1e2
 time_window = 5e-8
 lambda_b = 1/sampled_frequencies/np.sqrt(slv.mu_0*epsrb*slv.eps_0)
 kb = 2*np.pi*sampled_frequencies*np.sqrt(slv.mu_0*slv.eps_0*epsrb)
@@ -57,9 +58,11 @@ mymodel = slv.FDTD2D(dm.Domain(dx,dy,I,J),epsrb,sigb,sampled_frequencies,ls_x,
 ei = np.zeros((I,J,M),dtype=complex)
 es = np.zeros((M,M),dtype=complex)
 
+print('Runing incident field...')
 for i in range(M):
    Tx = sc.Source(sc.get_tx_position(Rs,dtheta,i),
                wv.GaussianSignal(dx,dy,wv_frequency),magnitude)
+   print('%d' %(i+1) + ' of %d' %M)
    mymodel.run(Tx)
    ei[:,:,i] = np.squeeze(mymodel.get_intern_field())
    for j in range(M):
@@ -67,14 +70,16 @@ for i in range(M):
 
 epsr = epsrb*np.ones((I,J))
 sig = sigb*np.ones((I,J))
-epsr[np.ix_(range(round(I/4)-round(.1*I),round(I/4)+round(.1*I)),
-            range(round(J/4)-round(.1*J),round(J/4)+round(.1*J)))] = 5.0
+epsr[np.ix_(range(round(I/2)-round(.1*I),round(I/2)+round(.1*I)),
+            range(round(J/2)-round(.1*J),round(J/2)+round(.1*J)))] = 2.0
 
 et = np.zeros((I,J,M),dtype=complex)
 
+print('Runing total field...')
 for i in range(M):
    Tx = sc.Source(sc.get_tx_position(Rs,dtheta,i),
                wv.GaussianSignal(dx,dy,wv_frequency),magnitude)
+   print('%d' %(i+1) + ' of %d' %M)
    mymodel.run(Tx,epsr=epsr,sig=sig)
    et[:,:,i] = np.squeeze(mymodel.get_intern_field())
    for j in range(M):

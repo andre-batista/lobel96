@@ -110,7 +110,7 @@ with open(expname,'rb') as datafile:
 
 # Loading inputs
 dx, dy = data['dx'], data['dy']
-I, J = data['I'], data['J']
+II, JJ = data['I'], data['J']
 epsrb, sigb = data['epsrb'], data['sigb']
 f = data['frequency']
 kb, lambda_b = data['kb'], data['lambda_b']
@@ -119,8 +119,13 @@ x, y = data['x'], data['y']
 gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
+print(ei[0,0])
+print(et[0,0])
+print(es[0,0])
+exit()
+
 # General Parameters
-maxit = 5            # Number of iterations
+maxit = 0             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
@@ -158,7 +163,7 @@ else:
 # How do you preffer the choice of the alpha?
 # 1 - (Lobel et al, 1996)
 # 2 - Golden section method
-alphaopt = 1
+alphaopt = 2
 
 # Initializing variables
 cnvg    = np.zeros((maxit+1,2))     # Convergence data
@@ -178,7 +183,7 @@ else:
 totaltime = time.time()
 
 # Iterations
-for it in range(1,maxit):
+for it in range(1,maxit+1):
     
     tic = time.time()
     
@@ -210,10 +215,10 @@ for it in range(1,maxit):
     C = C + alpha*D
     
     # Computing the inverse matrix
-    LC = lag.inv(I-gd*C)
+    LC = lag.inv(I-gd@C)
     
     # Computing the residual
-    rho = np.asarray(es-gs*C*LC*ei)
+    rho = np.asarray(es-gs@C@LC@ei)
     
     # Computing the objective function
     J = lag.norm(rho.reshape(-1))**2
@@ -233,7 +238,7 @@ totaltime = time.time()-totaltime
 print('Total time: %f' %totaltime + ' seconds')
 
 # Recovering dielectric properties
-tau     = np.reshape(np.diag(C),I,J)             # Constrast fuction
+tau     = np.reshape(C.data,(II,JJ))             # Constrast fuction
 epsr    = np.real(tau) + epsrb           # Retrieved relative permittivity
 sig     = -omega*eps0*epsrb*np.imag(tau) # Relative conductivity [S/m]
 
@@ -245,7 +250,7 @@ sig     = -omega*eps0*epsrb*np.imag(tau) # Relative conductivity [S/m]
 plt.imshow(epsr, extent = [x[0], x[-1], y[0], y[-1]])
 plt.xlabel('x [m]')
 plt.ylabel('y [m]')
-plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %self.f[indx])
+plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %f)
 cbar = plt.colorbar()
 cbar.set_label(r'$|\epsilon_r|$')
 # plt.savefig(filename + '_f%d' %indx, format = fileformat)

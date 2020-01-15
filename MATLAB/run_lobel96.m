@@ -63,7 +63,7 @@ load gs.mat
 load data.mat
 
 % General Parameters
-maxit   = 1e3;                      % Number of iterations
+maxit   = 10;                      % Number of iterations
 [M,L]   = size(es);                 % M measurements, L sources
 [N,~]   = size(ei);                 % N points within the mesh
 dS      = data.dx*data.dy;          % Surface element [m^2]
@@ -106,7 +106,7 @@ end
 % How do you preffer the choice of the alpha?
 % 1 - (Lobel et al, 1996)
 % 2 - Golden section method
-alphaopt = 1;
+alphaopt = 2;
 
 % Initializing variables
 cnvg    = zeros(maxit+1,2);           % Convergence data
@@ -191,7 +191,7 @@ sig     = -omega*eps0*data.epsrb*imag(tau); % Relative conductivity [S/m]
 
 % Plotting results
 figure
-load ./genfields/grid.mat
+load grid.mat
 
 % Relative permittivity plot
 subplot(3,2,1)
@@ -252,4 +252,4 @@ title('Gradient')
 savefig('lobel96fig.fig')
 
 % Saving solution
-save ../../../../../../Documents/MATLAB/inverse-approximation/lobel96.mat C cnvg totaltime -v7.3
+save lobel96.mat C cnvg totaltime -v7.3
