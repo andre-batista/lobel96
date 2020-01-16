@@ -130,8 +130,8 @@ totaltime = cputime;
 for it = 1:maxit
     
     tic
-    
-    % Computing the gradient    
+
+    % Computing the gradient
     gradJ = reshape(-2*conj(sparse(1:N*L,1:N*L,reshape((LC*ei),[],1)) * ...
         repmat(LC,L,1))*gs'*rho,N,[]);
     gradJ = sum(gradJ(:,(1:L:L^2)+(0:L-1)),2);

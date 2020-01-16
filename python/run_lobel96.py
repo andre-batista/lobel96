@@ -57,7 +57,7 @@ from numpy import linalg as lag
 import matplotlib.pyplot as plt
 
 def inner(v1,v2,d):
-    return np.sum(d*v1*np.conj(v2))
+    return complex(d*v1.T@np.conj(v2))
 
 def gsmethod(rho,v):
 
@@ -119,13 +119,8 @@ x, y = data['x'], data['y']
 gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
-print(ei[0,0])
-print(et[0,0])
-print(es[0,0])
-exit()
-
 # General Parameters
-maxit = 0             # Number of iterations
+maxit = 100             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
@@ -163,13 +158,13 @@ else:
 # How do you preffer the choice of the alpha?
 # 1 - (Lobel et al, 1996)
 # 2 - Golden section method
-alphaopt = 2
+alphaopt = 1
 
 # Initializing variables
 cnvg    = np.zeros((maxit+1,2))     # Convergence data
 I       = sps.eye(N,dtype=complex)  # Identity matrix
 LC      = lag.inv(I-gd@C)          # Initial inversion
-rho     = np.asarray(es-gs@C@LC@ei)            # Initial residual
+rho     = es-gs@C@LC@ei            # Initial residual
 
 # Printing first solution
 print('Iteration: 0 - Cost function: %.2e' %lag.norm(rho.reshape(-1))**2)
@@ -183,24 +178,24 @@ else:
 totaltime = time.time()
 
 # Iterations
-for it in range(1,maxit+1):
+for it in range(maxit):
     
     tic = time.time()
     
     # Computing the gradient
-    gradJ = np.asarray(np.reshape(-2*np.conj(sps.spdiags(np.reshape(LC@ei,N*M),0,N*M,N*M) @ np.tile(LC,(L,1)))@gs.conj().T@rho,(N,-1)))
-    gradJ = np.sum(gradJ[:,np.arange(0,L**2,L)+np.arange(0,L)],1)
+    gradJ = np.zeros((N,1),dtype=complex)
+    for l in range(L):
+        gradJ = gradJ - 2*np.conj(sps.spdiags(LC@ei[:,l],0,N,N)@LC)@gs.conj().T@rho[:,l]
     
-    g_last = np.asarray(np.copy(g))
-    g = np.asarray(-gradJ)
-    g = g.reshape((-1,1))
+    g_last = np.copy(g)
+    g = -gradJ
     
     # Computing the optimum direction
-    d = np.asarray(g) + inner(g,g-g_last,dS)/lag.norm(g_last)**2*d
+    d = g + inner(g,g-g_last,dS)/lag.norm(g_last)**2*d
     D = sps.spdiags(d.reshape(-1),0,N,N)
 
     # Computing v matrix
-    v = np.asarray(gs@LC.T@D@LC@ei)
+    v = gs@LC.T@D@LC@ei
     
     # Computing step
     if alphaopt is 1:
@@ -214,18 +209,19 @@ for it in range(1,maxit+1):
     # Computing next contrast
     C = C + alpha*D
     
-    # Computing the inverse matrix
+    # Computing the inverse matriz
     LC = lag.inv(I-gd@C)
     
     # Computing the residual
-    rho = np.asarray(es-gs@C@LC@ei)
+    # rho = es-gs@C@LC@ei
+    rho = rho-alpha*v
     
     # Computing the objective function
     J = lag.norm(rho.reshape(-1))**2
-    t = time.time()-tic
     
     # Printing iteration
-    print('Iteration: %d' %it
+    t = time.time()-tic
+    print('Iteration: %d' %(it+1)
           + ' - Cost function: %.2e' %J
           + ' - norm(g): %.2e' %lag.norm(g)
           + ' - time: %.1f sec' %t)
