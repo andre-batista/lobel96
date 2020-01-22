@@ -358,7 +358,6 @@ class FDTD2D:
         current_time = 0
         aux = (Ez.shape, self.f.size)
         self.et = np.zeros(aux[0]+(aux[1], ), dtype = complex)
-        alpha = self.f*dt*number_of_time_steps
         for i in range(len(self.probes)):
             self.probes[i].allocate_signal(time)
                 
@@ -540,11 +539,8 @@ class FDTD2D:
                                                  self.probes[i].position[1]))
                 
             for f_indx in range(self.f.size):
-                self.et[:, :, f_indx] = (
-                    self.et[:, :, f_indx] + Ez*np.exp(-1j*2*np.pi*alpha[f_indx]*(time_step-1)/number_of_time_steps))
-                    # + Ez*np.exp(-1j*2*np.pi*self.f[f_indx]*(time_step+1)*dt)*dt)
-                
-        self.et = 2*self.et/number_of_time_steps;
+                self.et[:, :, f_indx] = (self.et[:, :, f_indx] 
+                                         + dt*Ez*np.exp(-1j*2*np.pi*self.f[f_indx]*(time_step+1)*dt))
   
         for f_indx in range(self.f.size):
             fint_real = interpolate.RectBivariateSpline(xcoor, ycoor, np.real(self.et[:, :, f_indx]))

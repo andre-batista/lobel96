@@ -55,6 +55,7 @@ import time
 from scipy import sparse as sps
 from numpy import linalg as lag
 import matplotlib.pyplot as plt
+from numba import jit
 
 def inner(v1,v2,d):
     return complex(d*v1.T@np.conj(v2))
@@ -102,6 +103,32 @@ def getinterval(rho,v):
         Fb = lag.norm(np.reshape(rho-b*v,(-1,1)))**2
     return a,b
 
+def norm_grad(c):
+    del_x, del_y = np.gradient(c)
+    re = np.sqrt(np.real(del_x)**2+np.real(del_y)**2)
+    im = np.sqrt(np.imag(del_x)**2+np.imag(del_y)**2)
+    return re, im
+
+def phip(t):
+    return 2*t/(1+t**2)**2
+
+@jit(nopython=True)
+def weighted_laplacian(c,br,bi):
+    I,J = c.shape
+    re = np.zeros((I,J))
+    im = np.zeros((I,J))
+    for i in range(1,I-1):
+        for j in range(1,J-1):
+            re[i,j] = (-(2*br[i,j] + br[i-1,j] + br[i,j-1])*np.real(c[i,j]) 
+                       + br[i,j]*np.real(c[i,j+1]) + br[i,j]*np.real(c[i+1,j]) 
+                       + br[i,j-1]*np.real(c[i,j-1]) + br[i-1,j]*np.real(c[i-1,j]))
+            im[i,j] = (-(2*bi[i,j] + bi[i-1,j] + bi[i,j-1])*np.imag(c[i,j]) 
+                       + bi[i,j]*np.imag(c[i,j+1]) + bi[i,j]*np.imag(c[i+1,j]) 
+                       + bi[i,j-1]*np.imag(c[i,j-1]) + bi[i-1,j]*np.imag(c[i-1,j]))
+    re = re.reshape((I*J,1))
+    im = im.reshape((I*J,1))
+    return re, im
+
 print('========== The Conjugated Gradient Method ==========')
 expname = 'basic'
 
@@ -120,12 +147,14 @@ gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
 # General Parameters
-maxit = 100             # Number of iterations
+maxit = 50             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
 eps0 = 8.85418782e-12   # Vaccum permittivity [F/m]
 omega = 2*np.pi*f       # Angular frequency [rad/sec]
+delta_r, delta_i = 1.2, 1.2
+lambda_r, lambda_i = 1., 1.
 
 # How do you preffer the initial solution?
 # 1 - Everything background
@@ -182,10 +211,17 @@ for it in range(maxit):
     
     tic = time.time()
     
+    re_grad, im_grad = norm_grad(np.reshape(C.data,(II,JJ)))
+    b_r = phip(re_grad/delta_r)/(2*re_grad/delta_r)
+    b_i = phip(im_grad/delta_i)/(2*im_grad/delta_i)
+    re_wl, im_wl = weighted_laplacian(np.reshape(C.data,(II,JJ)),b_r,b_i)
+    
     # Computing the gradient
     gradJ = np.zeros((N,1),dtype=complex)
     for l in range(L):
-        gradJ = gradJ - 2*np.conj(sps.spdiags(LC@ei[:,l],0,N,N)@LC)@gs.conj().T@rho[:,l]
+        gsrho = gs.conj().T@rho[:,l]
+        gradJ = gradJ - 2*np.conj(sps.spdiags(LC@ei[:,l],0,N,N)@LC)@gsrho
+    gradJ = gradJ - 2*lambda_r**2*re_wl/delta_r**2 - 2j*lambda_i**2*im_wl/delta_i**2
     
     g_last = np.copy(g)
     g = -gradJ
@@ -199,10 +235,45 @@ for it in range(maxit):
     
     # Computing step
     if alphaopt is 1:
-        alpha = 0
-        for l in range(L):
-            alpha = alpha + inner(rho[:,l],v[:,l],dx)
-        alpha = alpha/lag.norm(v.reshape(-1))**2
+        # alpha = 0
+        # for l in range(L):
+        #     alpha = alpha + inner(rho[:,l],v[:,l],dx)
+        # alpha = alpha/lag.norm(v.reshape(-1))**2
+        betah = lambda_r*b_r+1j*lambda_i*b_i
+        delta_x_d, delta_y_d = np.gradient(np.reshape(D.data,(II,JJ)))
+        delta_x_d_b, delta_y_d_b = np.gradient(betah*np.reshape(D.data,(II,JJ)))
+        delta_x_c, delta_y_c = np.gradient(betah*np.reshape(C.data,(II,JJ)))
+        re_grad_d, im_grad_d = norm_grad(np.reshape(D.data,(II,JJ)))
+        aux0 = np.sum(lag.norm(v,axis=0)**2)
+        aux1 = np.sum(np.real(v*np.conj(rho)*dS))
+        aux2 = np.sum(np.real(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
+        aux3 = np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))
+        num_alpha_r = (aux0*(aux1 -
+                             aux2) +
+                       np.sum(np.real(betah)*im_grad_d**4+np.imag(betah)*re_grad_d**4)*
+                       (aux1-
+                        aux2)+
+                       (np.sum(np.imag(v*rho*dS))*
+                        aux3)+
+                       aux3*
+                       np.sum(np.imag(delta_x_c*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_c)))
+        aux1 = np.sum(np.imag(v*np.conj(rho)*dS))
+        aux2 = np.sum(np.imag(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
+        num_alpha_i = (-aux0*(aux1 -
+                              aux2) -
+                       np.sum(np.real(betah)*re_grad_d**4+np.imag(betah)*im_grad_d**4)*
+                       (aux1+
+                        aux2)-
+                       (np.sum(np.real(v*rho*dS))*
+                        np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b)))-
+                       np.sum(np.real(delta_x_c*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_c))*
+                       np.sum(np.imag(delta_x_d*np.conj(delta_x_d_b)+np.conj(delta_y_d_b)*delta_y_d)))
+        delta_d = delta_x_d**2+delta_y_d**2
+        den_alpha = ((aux0)*(aux0+
+                             np.sum((np.real(betah)+np.imag(betah))*delta_d))-
+                     np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))**2 +
+                     np.sum(np.imag(betah)*np.real(delta_d)+np.real(betah)*np.imag(delta_d)))
+        alpha = num_alpha_r/den_alpha + 1j*num_alpha_i/den_alpha
     else:
         alpha = gsmethod(rho,v)
       
@@ -210,7 +281,9 @@ for it in range(maxit):
     C = C + alpha*D
     
     # Computing the inverse matriz
+    t1 = time.time()
     LC = lag.inv(I-gd@C)
+    print('Inversion time: %f' %(time.time()-t1))
     
     # Computing the residual
     # rho = es-gs@C@LC@ei
@@ -249,9 +322,9 @@ plt.ylabel('y [m]')
 plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %f)
 cbar = plt.colorbar()
 cbar.set_label(r'$|\epsilon_r|$')
-# plt.savefig(filename + '_f%d' %indx, format = fileformat)
-plt.show()
-plt.close()
+plt.savefig(expname +'fig', format = 'jpeg')
+# plt.show()
+# plt.close()
 
 # % Relative permittivity plot
 # subplot(3,2,1)

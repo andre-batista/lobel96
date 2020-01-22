@@ -102,6 +102,12 @@ def getinterval(rho,v):
         Fb = lag.norm(np.reshape(rho-b*v,(-1,1)))**2
     return a,b
 
+def norm_grad(c):
+    del_x, del_y = np.gradient(c)
+    re = np.sqrt(np.real(del_x)**2+np.real(del_y)**2)
+    im = np.sqrt(np.imag(del_x)**2+np.imag(del_y)**2)
+    return re, im
+
 print('========== The Conjugated Gradient Method ==========')
 expname = 'basic'
 
@@ -120,12 +126,13 @@ gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
 # General Parameters
-maxit = 100             # Number of iterations
+maxit = 2             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
 eps0 = 8.85418782e-12   # Vaccum permittivity [F/m]
 omega = 2*np.pi*f       # Angular frequency [rad/sec]
+delta_r, delta_i = .5, .5
 
 # How do you preffer the initial solution?
 # 1 - Everything background
@@ -211,8 +218,11 @@ for it in range(maxit):
     C = C + alpha*D
     
     # Computing the inverse matriz
+    t1 = time.time()
     gdC = gd@C
     LC = I+gdC+lag.matrix_power(gdC,2)
+    print('Inversion time: %f' %(time.time()-t1))
+    
     
     # Computing the residual
     # rho = es-gs@C@LC@ei

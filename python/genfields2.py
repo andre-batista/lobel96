@@ -1,20 +1,3 @@
-""" GENFIELDS Generation fields routine
-   This script implements the data generation for the Gradient Conjugated
-   Method (Lobel et al., 1996). It computes the incident, total and
-   scattered field as well as the Green function for both domains.
-
-   Implemented by:
- 
-   Andre Costa Batista
-   Universidade Federal de Minas Gerais
-
-   REFERENCES
-
-   Lobel, P., et al. "Conjugate gradient method for solving inverse
-   scattering with experimental data." IEEE Antennas and Propagation
-   Magazine 38.3 (1996): 48-51.
-"""
-
 # Importing general libraries
 import numpy as np
 import copy as cp
@@ -31,17 +14,52 @@ import waveform as wv
 import source as sc
 import probe as pb
 
-# Model parameters
+eps0, mu0, c = 8.8541878128e-12, 4e-7*np.pi, 299792458.
+
+# Model class
+class Model:
+    
+    expname = ''
+    contrast = float()
+    frequency = float()
+    object_size = float()
+    number_sources = int()
+    
+    def __init__(self,
+                 expname,
+                 contrast,
+                 frequency,
+                 object_size,
+                 number_sources):
+        
+        self.expname = expname
+        
+        self.epsr_b, self.sig_b = 1., 0.
+        self.epsr_o, self.sig_o = contrast*self.epsr_b, 0.
+        
+        
+        
+        self.I, self.J = I, J
+        self.dx, self.dy = dx, dy
+        self.epsrb, self.sigb = epsrb, sigb
+        self.sampled_frequencies = sampled_frequencies
+        self.wv_frequency = wv_frequency
+        self.dtheta    
+    
+
+
+
+
 expname = 'basic'
-I, J = 29, 29   # Number of cells in x,y-axis
+I, J = 50, 50   # Number of cells in x,y-axis
 N = I*J
-dx, dy = 3.9445e-2, 3.9445e-2
+dx, dy = 5e-3, 5e-3
 epsrb, sigb = 1., 0.
 sampled_frequencies = np.array([800e6])
 wv_frequency = 800e6
 dtheta = 12
 M = round(360/dtheta)
-Rs = 3.4317
+Rs = 18e-2
 ls_x, ls_y = 4*dx, 4*dy
 magnitude = 1e2
 time_window = 5e-8
@@ -71,7 +89,7 @@ for i in range(M):
 epsr = epsrb*np.ones((I,J))
 sig = sigb*np.ones((I,J))
 epsr[np.ix_(range(round(I/2)-round(.1*I),round(I/2)+round(.1*I)),
-            range(round(J/2)-round(.1*J),round(J/2)+round(.1*J)))] = 1.8
+            range(round(J/2)-round(.1*J),round(J/2)+round(.1*J)))] = 2.0
 
 et = np.zeros((I,J,M),dtype=complex)
 
