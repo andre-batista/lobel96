@@ -60,48 +60,34 @@ from numba import jit
 def inner(v1,v2,d):
     return complex(d*v1.T@np.conj(v2))
 
-def gsmethod(rho,v):
+def norm_grad(c):
+    del_x, del_y = np.gradient(c)
+    re = np.sqrt(np.real(del_x)**2+np.real(del_y)**2)
+    im = np.sqrt(np.imag(del_x)**2+np.imag(del_y)**2)
+    return re, im
 
-    gmean       = 0.618
-    delta       = 1.0e-3
-    [a, b]      = getinterval(rho,v)   
-    xa          = b - gmean*(b-a)
-    xb          = a + gmean*(b-a)
-    fxa         = lag.norm(np.reshape(rho-xa*v,(-1,1)))**2
-    fxb         = lag.norm(np.reshape(rho-xb*v,(-1,1)))**2
-    
-    while (b - a) > delta:
-        if fxa > fxb:
-            a = xa
-            xa = xb
-            fxa = fxb
-            xb = a + gmean*(b - a)
-            fxb = lag.norm(np.reshape(rho-xb*v,(-1,1)))**2
-        else:
-            b = xb
-            xb = xa
-            fxb = fxa
-            xa = b - gmean*(b-a)
-            fxa = lag.norm(np.reshape(rho-xa*v,(-1,1)))**2
+def phi(t):
+    return t**2/(1+t**2)
 
-    alpha = (b+a)/2
-    return alpha
-    
-def getinterval(rho,v):
-    
-    step0           = 1.0e-03
-    a               = 0
-    Fa              = lag.norm(rho.reshape(-1))**2
-    b               = step0
-    Fb              = lag.norm(np.reshape(rho-step0*v,(-1,1)))**2
-    stepsize        = step0
-    acceleration    = 2
-    
-    while (Fa > Fb):
-        stepsize = acceleration*stepsize
-        b = b + stepsize
-        Fb = lag.norm(np.reshape(rho-b*v,(-1,1)))**2
-    return a,b
+def phip(t):
+    return 2*t/(1+t**2)**2
+
+@jit(nopython=True)
+def weighted_laplacian(c,br,bi):
+    I,J = c.shape
+    re = np.zeros((I,J))
+    im = np.zeros((I,J))
+    for i in range(1,I-1):
+        for j in range(1,J-1):
+            re[i,j] = (-(2*br[i,j] + br[i-1,j] + br[i,j-1])*np.real(c[i,j]) 
+                       + br[i,j]*np.real(c[i,j+1]) + br[i,j]*np.real(c[i+1,j]) 
+                       + br[i,j-1]*np.real(c[i,j-1]) + br[i-1,j]*np.real(c[i-1,j]))
+            im[i,j] = (-(2*bi[i,j] + bi[i-1,j] + bi[i,j-1])*np.imag(c[i,j]) 
+                       + bi[i,j]*np.imag(c[i,j+1]) + bi[i,j]*np.imag(c[i+1,j]) 
+                       + bi[i,j-1]*np.imag(c[i,j-1]) + bi[i-1,j]*np.imag(c[i-1,j]))
+    re = re.reshape((I*J,1))
+    im = im.reshape((I*J,1))
+    return re, im
 
 print('========== The Conjugated Gradient Method ==========')
 expname = 'basic'
@@ -121,12 +107,15 @@ gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
 # General Parameters
-maxit = 50             # Number of iterations
+maxit = 150             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
 eps0 = 8.85418782e-12   # Vaccum permittivity [F/m]
 omega = 2*np.pi*f       # Angular frequency [rad/sec]
+delta_r, delta_i = 4.239523e-02, 4.239523e-02
+# delta_r, delta_i = 1e-8, 1e-8
+lambda_r, lambda_i = 1e-2, 1e-2
 
 # How do you preffer the initial solution?
 # 1 - Everything background
@@ -158,7 +147,6 @@ else:
 
 # How do you preffer the choice of the alpha?
 # 1 - (Lobel et al, 1996)
-# 2 - Golden section method
 alphaopt = 1
 
 # Initializing variables
@@ -175,6 +163,7 @@ if initopt is not 2:
 else:
     cnvg[0,:] = np.array([lag.norm(rho.reshape(-1))**2,.0])
 
+re_grad, im_grad = norm_grad(np.reshape(C.data,(II,JJ)))
 totaltime = time.time()
 
 # Iterations
@@ -182,11 +171,17 @@ for it in range(maxit):
     
     tic = time.time()
     
+    b_r = phip(re_grad/delta_r)/(2*re_grad/delta_r)
+    b_i = phip(im_grad/delta_i)/(2*im_grad/delta_i)
+    
+    re_wl, im_wl = weighted_laplacian(np.reshape(C.data,(II,JJ)),b_r,b_i)
+    
     # Computing the gradient
     gradJ = np.zeros((N,1),dtype=complex)
     for l in range(L):
         gsrho = gs.conj().T@rho[:,l]
         gradJ = gradJ - 2*np.conj(sps.spdiags(LC@ei[:,l],0,N,N)@LC)@gsrho
+    gradJ = gradJ - 2*lambda_r**2*re_wl/delta_r**2 - 2j*lambda_i**2*im_wl/delta_i**2
     
     g_last = np.copy(g)
     g = -gradJ
@@ -199,26 +194,59 @@ for it in range(maxit):
     v = gs@LC.T@D@LC@ei
     
     # Computing step
-    if alphaopt is 1:
-        alpha = 0
-        for l in range(L):
-            alpha = alpha + inner(rho[:,l],v[:,l],dx)
-        alpha = alpha/lag.norm(v.reshape(-1))**2
-    else:
-        alpha = gsmethod(rho,v)
+    bh = lambda_r*b_r+1j*lambda_i*b_i
+    delta_x_d, delta_y_d = np.gradient(np.reshape(D.data,(II,JJ)))
+    delta_x_d_b, delta_y_d_b = np.gradient(np.real(bh)*np.reshape(D.data,(II,JJ)) + 1j*np.imag(bh)*np.reshape(D.data,(II,JJ)))
+    delta_x_c, delta_y_c = np.gradient(np.real(bh)*np.reshape(C.data,(II,JJ)) + 1j*np.imag(bh)*np.reshape(C.data,(II,JJ)))
+    re_grad_d, im_grad_d = norm_grad(np.reshape(D.data,(II,JJ)))
+    aux0 = np.sum(lag.norm(v,axis=0)**2)
+    aux1 = np.sum(np.real(v*np.conj(rho)*dx))
+    aux2 = np.sum(np.real(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
+    aux3 = np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))
+    num_alpha_r = (aux0*(aux1 -
+                             aux2) +
+                       np.sum(np.real(bh)*im_grad_d**4+np.imag(bh)*re_grad_d**4)*
+                       (aux1-
+                        aux2)+
+                       (np.sum(np.imag(v*np.conj(rho)*dx))*
+                        aux3)+
+                       aux3*
+                       np.sum(np.imag(delta_x_c*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_c)))
+    aux1 = np.sum(np.imag(v*np.conj(rho)*dx))
+    aux2 = np.sum(np.imag(np.conj(delta_x_d)*delta_x_c+np.conj(delta_y_d)*delta_y_c))
+    num_alpha_i = (-aux0*(aux1 -
+                              aux2) -
+                       np.sum(np.real(bh)*re_grad_d**4+np.imag(bh)*im_grad_d**4)*
+                       (aux1+
+                        aux2)-
+                       (np.sum(np.real(v*np.conj(rho)*dx))*
+                        np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b)))-
+                       np.sum(np.real(delta_x_c*delta_x_d+delta_y_d*delta_y_c))*
+                       np.sum(np.imag(delta_x_d*np.conj(delta_x_d_b)+np.conj(delta_y_d_b)*delta_y_d)))
+    delta_d = np.sqrt(delta_x_d*np.conj(delta_x_d)+delta_y_d*np.conj(delta_y_d))
+    den_alpha = ((aux0)*(aux0+
+                             np.sum((np.real(bh)+np.imag(bh))*delta_d**2))-
+                     np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))**2 +
+                     np.sum(np.real(bh)*re_grad_d**4+np.imag(bh)*im_grad_d**4)*
+                     np.sum(np.imag(bh)*re_grad_d**4+np.real(bh)*im_grad_d**4))
+    alpha = num_alpha_r/den_alpha + 1j*num_alpha_i/den_alpha
       
     # Computing next contrast
     C = C + alpha*D
+    re_grad, im_grad = norm_grad(np.reshape(C.data,(II,JJ)))
+    # print('Mean of the norm of the gradient: %e' %np.mean(np.sqrt(re_grad**2+im_grad)))
     
     # Computing the inverse matriz
+    # t1 = time.time()
     LC = lag.inv(I-gd@C)
+    # print('Inversion time: %f' %(time.time()-t1))
     
     # Computing the residual
     # rho = es-gs@C@LC@ei
     rho = rho-alpha*v
     
     # Computing the objective function
-    J = lag.norm(rho.reshape(-1))**2
+    J = lag.norm(rho.reshape(-1))**2 + np.sum(lambda_r**2*phi(re_grad/delta_r)+lambda_i**2*phi(im_grad/delta_i))
     
     # Printing iteration
     t = time.time()-tic
@@ -245,4 +273,5 @@ plt.ylabel('y [m]')
 plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %f)
 cbar = plt.colorbar()
 cbar.set_label(r'$|\epsilon_r|$')
-plt.savefig(expname +'lobel96fig', format = 'jpeg')
+plt.savefig(expname +'lobel97fig', format = 'jpeg')
+# plt.show()
