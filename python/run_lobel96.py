@@ -121,7 +121,7 @@ gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
 # General Parameters
-maxit = 50             # Number of iterations
+maxit = 150             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
@@ -245,4 +245,5 @@ plt.ylabel('y [m]')
 plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %f)
 cbar = plt.colorbar()
 cbar.set_label(r'$|\epsilon_r|$')
-plt.savefig(expname +'lobel96fig', format = 'jpeg')
+# plt.savefig(expname +'lobel96fig', format = 'jpeg')
+plt.show()

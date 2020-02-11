@@ -85,6 +85,39 @@ def weighted_laplacian(c,br,bi):
             im[i,j] = (-(2*bi[i,j] + bi[i-1,j] + bi[i,j-1])*np.imag(c[i,j]) 
                        + bi[i,j]*np.imag(c[i,j+1]) + bi[i,j]*np.imag(c[i+1,j]) 
                        + bi[i,j-1]*np.imag(c[i,j-1]) + bi[i-1,j]*np.imag(c[i-1,j]))
+    
+    i = 0
+    for j in range(1,J-1):
+        re[i,j] = 2*re[i+1,j] - re[i+2,j]
+        im[i,j] = 2*im[i+1,j] - im[i+2,j]
+    
+    j = 0
+    for i in range(1,I-1):
+        re[i,j] = 2*re[i,j+1] - re[i,j+2]
+        im[i,j] = 2*im[i,j+1] - im[i,j+2]
+        
+    i = I-1
+    for j in range(1,J-1):
+        re[i,j] = 2*re[i-1,j] - re[i-2,j]
+        im[i,j] = 2*im[i-1,j] - im[i-2,j]
+    
+    j = J-1
+    for i in range(1,I-1):
+        re[i,j] = 2*re[i,j-1] - re[i,j-2]
+        im[i,j] = 2*im[i,j-1] - im[i,j-2]
+        
+    re[0,0] = (re[0,1]+re[1,0])/2
+    im[0,0] = (im[0,1]+im[1,0])/2
+    
+    re[0,J-1] = (re[1,J-1]+re[0,J-2])/2
+    im[0,J-1] = (im[1,J-1]+im[0,J-2])/2
+    
+    re[I-1,0] = (re[I-2,0]+re[I-1,1])/2
+    im[I-1,0] = (im[I-2,0]+im[I-1,1])/2
+    
+    re[I-1,J-1] = (re[I-2,J-1]+re[I-1,J-2])/2
+    im[I-1,J-1] = (im[I-2,J-1]+im[I-1,J-2])/2
+    
     re = re.reshape((I*J,1))
     im = im.reshape((I*J,1))
     return re, im
@@ -107,15 +140,15 @@ gs, gd = data['gs'], data['gd']
 epsr, sig = data['epsr'], data['sig']
 
 # General Parameters
-maxit = 150             # Number of iterations
+maxit = 40             # Number of iterations
 M, L = es.shape         # M measurements, L sources
 N = ei.shape[0]         # N points within the mesh
 dS = dx*dy              # Surface element [m^2]
 eps0 = 8.85418782e-12   # Vaccum permittivity [F/m]
 omega = 2*np.pi*f       # Angular frequency [rad/sec]
-delta_r, delta_i = 4.239523e-02, 4.239523e-02
-# delta_r, delta_i = 1e-8, 1e-8
-lambda_r, lambda_i = 1e-2, 1e-2
+# delta_r, delta_i = 4.239523e-02, 4.239523e-02  1e-5 ~ 1-3
+delta_r, delta_i = 1e-4, 1e-4
+lambda_r, lambda_i = 0e-10, 0e-10
 
 # How do you preffer the initial solution?
 # 1 - Everything background
@@ -199,32 +232,41 @@ for it in range(maxit):
     delta_x_d_b, delta_y_d_b = np.gradient(np.real(bh)*np.reshape(D.data,(II,JJ)) + 1j*np.imag(bh)*np.reshape(D.data,(II,JJ)))
     delta_x_c, delta_y_c = np.gradient(np.real(bh)*np.reshape(C.data,(II,JJ)) + 1j*np.imag(bh)*np.reshape(C.data,(II,JJ)))
     re_grad_d, im_grad_d = norm_grad(np.reshape(D.data,(II,JJ)))
-    aux0 = np.sum(lag.norm(v,axis=0)**2)
-    aux1 = np.sum(np.real(v*np.conj(rho)*dx))
-    aux2 = np.sum(np.real(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
-    aux3 = np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))
-    num_alpha_r = (aux0*(aux1 -
-                             aux2) +
+    
+    normv_sum = np.sum(lag.norm(v,axis=0)**2)
+    vrho_sum = np.sum(v*np.conj(rho)*dx) # should i multiply by dx?
+    real_dc = np.sum(np.real(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
+    im_dd = np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))
+    
+    # aux0 = np.sum(lag.norm(v,axis=0)**2)
+    # aux1 = np.sum(np.real(v*np.conj(rho)*dx))
+    # aux2 = np.sum(np.real(delta_x_d*delta_x_c+delta_y_d*delta_y_c))
+    # aux3 = np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))
+    
+    num_alpha_r = (normv_sum*(np.real(vrho_sum) -
+                             real_dc) +
                        np.sum(np.real(bh)*im_grad_d**4+np.imag(bh)*re_grad_d**4)*
-                       (aux1-
-                        aux2)+
-                       (np.sum(np.imag(v*np.conj(rho)*dx))*
-                        aux3)+
-                       aux3*
+                       (np.real(vrho_sum)-
+                        real_dc)+
+                       (np.imag(vrho_sum)*
+                        im_dd)+
+                       im_dd*
                        np.sum(np.imag(delta_x_c*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_c)))
-    aux1 = np.sum(np.imag(v*np.conj(rho)*dx))
+    
+    # aux1 = np.sum(np.imag(v*np.conj(rho)*dx))
     aux2 = np.sum(np.imag(np.conj(delta_x_d)*delta_x_c+np.conj(delta_y_d)*delta_y_c))
-    num_alpha_i = (-aux0*(aux1 -
+    
+    num_alpha_i = (-1*normv_sum*(np.imag(vrho_sum) -
                               aux2) -
                        np.sum(np.real(bh)*re_grad_d**4+np.imag(bh)*im_grad_d**4)*
-                       (aux1+
+                       (np.imag(vrho_sum)+
                         aux2)-
                        (np.sum(np.real(v*np.conj(rho)*dx))*
                         np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b)))-
                        np.sum(np.real(delta_x_c*delta_x_d+delta_y_d*delta_y_c))*
                        np.sum(np.imag(delta_x_d*np.conj(delta_x_d_b)+np.conj(delta_y_d_b)*delta_y_d)))
     delta_d = np.sqrt(delta_x_d*np.conj(delta_x_d)+delta_y_d*np.conj(delta_y_d))
-    den_alpha = ((aux0)*(aux0+
+    den_alpha = ((normv_sum)*(normv_sum+
                              np.sum((np.real(bh)+np.imag(bh))*delta_d**2))-
                      np.sum(np.imag(delta_x_d_b*np.conj(delta_x_d)+np.conj(delta_y_d)*delta_y_d_b))**2 +
                      np.sum(np.real(bh)*re_grad_d**4+np.imag(bh)*im_grad_d**4)*
@@ -273,5 +315,5 @@ plt.ylabel('y [m]')
 plt.title(r'Relative Permittivity  - $f = $ %.1e [Hz]' %f)
 cbar = plt.colorbar()
 cbar.set_label(r'$|\epsilon_r|$')
-plt.savefig(expname +'lobel97fig', format = 'jpeg')
-# plt.show()
+# plt.savefig(expname +'lobel97fig', format = 'jpeg')
+plt.show()
