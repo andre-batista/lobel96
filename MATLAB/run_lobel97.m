@@ -63,7 +63,11 @@ load gs.mat
 load data.mat
 
 % General Parameters
-maxit   = 50;                      % Number of iterations
+maxit   = 150;                      % Number of iterations
+delta_r = 1e-4;
+delta_i = delta_r;
+lambda_r = 1e-7;
+lambda_i = lambda_r;
 [M,L]   = size(es);                 % M measurements, L sources
 [N,~]   = size(ei);                 % N points within the mesh
 dS      = data.dx*data.dy;          % Surface element [m^2]
@@ -124,6 +128,10 @@ else
     cnvg(1,:) = [norm(rho(:))^2,.0];
 end
 
+II = data.I;
+JJ = data.J;
+dx = dS;
+[re_grad, im_grad] = norm_grad(reshape(diag(C),[II,JJ]));
 totaltime = cputime;
 
 % Iterations
@@ -131,10 +139,15 @@ for it = 1:maxit
     
     tic
 
+    b_r = phip(re_grad/delta_r)./(2*re_grad/delta_r);
+    b_i = phip(im_grad/delta_i)./(2*im_grad/delta_i);
+    [re_wl, im_wl] = weighted_laplacian(reshape(diag(C),II,JJ),b_r,b_i);
+
     % Computing the gradient
     gradJ = reshape(-2*conj(sparse(1:N*L,1:N*L,reshape((LC*ei),[],1)) * ...
         repmat(LC,L,1))*gs'*rho,N,[]);
     gradJ = sum(gradJ(:,(1:L:L^2)+(0:L-1)),2);
+    gradJ = gradJ - 2*lambda_r^2*re_wl/delta_r^2 - 2j*lambda_i^2*im_wl/delta_i^2;
     
     g_last = g;
     g = -gradJ;
@@ -147,17 +160,51 @@ for it = 1:maxit
 	v = gs*LC.'*D*LC*ei;
     
     % Computing step
-    switch alphaopt
-        case 1
-            alpha = 0;
-            for l = 1:L
-                alpha = alpha + inner(rho(:,l),v(:,l),data.dx);
-            end
-            alpha = alpha/norm(v(:))^2;
-        otherwise
-            alpha = gsmethod(rho,v);
+    bh = lambda_r*b_r+1j*lambda_i*b_i;
+    [delta_x_d, delta_y_d] = gradient(reshape(diag(D),[II,JJ]));
+    [delta_x_d_b, delta_y_d_b] = gradient(real(bh).*reshape(diag(D),[II,JJ]) + 1j*imag(bh).*reshape(diag(D),[II,JJ]));
+    [delta_x_c, delta_y_c] = gradient(real(bh).*reshape(diag(C),[II,JJ]) + 1j*imag(bh).*reshape(diag(C),[II,JJ]));
+    [re_grad_d, im_grad_d] = norm_grad(reshape(diag(D),[II,JJ]));
+
+    normv_sum = 0;
+    for i = 1:length(v(1,:))
+        normv_sum = normv_sum + sum(norm(v(:,i))^2);
     end
+    vrho_sum = sum(sum(v.*conj(rho)*dx)); % should i multiply by dx?
+    real_dc = sum(sum(real(delta_x_d.*delta_x_c+delta_y_d.*delta_y_c)));
+    im_dd = sum(sum(imag(delta_x_d_b.*conj(delta_x_d)+conj(delta_y_d).*delta_y_d_b)));
+
+    num_alpha_r = (normv_sum*(real(vrho_sum) - ...
+        real_dc) + ...
+        sum(sum(real(bh).*im_grad_d.^4+imag(bh).*re_grad_d.^4))* ...
+        (real(vrho_sum)- ...
+        real_dc)+ ... 
+        (imag(vrho_sum)* ...
+        im_dd)+ ...
+        im_dd* ...
+        sum(sum(imag(delta_x_c.*conj(delta_x_d)+conj(delta_y_d).*delta_y_c))));
     
+    aux2 = sum(sum(imag(conj(delta_x_d).*delta_x_c+conj(delta_y_d).*delta_y_c)));
+    
+    num_alpha_i = (-1*normv_sum*(imag(vrho_sum) - ...
+                                  aux2) - ...
+                           sum(sum(real(bh).*re_grad_d.^4+imag(bh).*im_grad_d.^4))* ...
+                           (imag(vrho_sum)+ ...
+                            aux2)- ...
+                           (real(vrho_sum) * ...
+                            sum(sum(imag(delta_x_d_b.*conj(delta_x_d)+conj(delta_y_d).*delta_y_d_b))))- ...
+                           sum(sum(real(delta_x_c.*delta_x_d+delta_y_d.*delta_y_c)))* ...
+                           sum(sum(imag(delta_x_d*conj(delta_x_d_b)+conj(delta_y_d_b).*delta_y_d))));
+    
+    delta_d = sqrt(delta_x_d.*conj(delta_x_d)+delta_y_d.*conj(delta_y_d));
+    
+    den_alpha = ((normv_sum)*(normv_sum+ ...
+                                 sum(sum((real(bh)+imag(bh))*delta_d.^2)))- ...
+                         sum(sum(imag(delta_x_d_b.*conj(delta_x_d)+conj(delta_y_d).*delta_y_d_b)))^2 + ...
+                         sum(sum(real(bh).*re_grad_d.^4+imag(bh).*im_grad_d.^4))* ...
+                         sum(sum(imag(bh).*re_grad_d.^4+real(bh).*im_grad_d.^4)));
+    alpha = num_alpha_r/den_alpha + 1j*num_alpha_i/den_alpha;
+
     % Computing next contrast
     C = C + alpha*D;
     
@@ -168,7 +215,7 @@ for it = 1:maxit
     rho = es-gs*C*LC*ei;
     
     % Computing the objective function
-    J = norm(rho(:))^2;
+    J = norm(rho(:))^2 + sum(sum(lambda_r^2*phi(re_grad/delta_r)+lambda_i^2*phi(im_grad/delta_i)));
     t = toc;
     
     % Printing iteration
@@ -250,7 +297,7 @@ ylabel('|\nabla J(C)|')
 title('Gradient')
 
 % savefig('lobel96fig.fig')
-saveas(gcf,'lobel96fig','jpeg')
+saveas(gcf,'lobel97fig','jpeg')
 
 % Saving solution
 save lobel96.mat C cnvg totaltime -v7.3

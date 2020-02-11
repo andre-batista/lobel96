@@ -17,12 +17,12 @@
 clear, close all
 
 % Domain parameters
-I = 50;                                 % Number of cells in x-axis
-J = 50;                                 % Number of cells in y-axis
+I = 29;                                 % Number of cells in x-axis
+J = 29;                                 % Number of cells in y-axis
 
 % DATA struct
-data.dx     = 5e-3;                     % Cell size in x-axis [m]
-data.dy     = 5e-3;                     % Cell size in y-axis [m]
+data.dx     = 3.9445e-2;                     % Cell size in x-axis [m]
+data.dy     = 3.9445e-2;                     % Cell size in y-axis [m]
 data.epsr   = ones(I,J);                % Relative permittivity data
 data.sig    = zeros(size(data.epsr));   % Conductivity data [S/m]
 data.epsrb  = 1;                        % Background relative permittivity
