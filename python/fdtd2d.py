@@ -1,6 +1,8 @@
 import copy as cp
 import numpy as np
 import pickle
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy import interpolate
 
@@ -176,8 +178,8 @@ class FDTD2D:
                 (ind+1 - 0.5) * dy + self.domain.min_y)
             
         # x and y coordinates for epsr and Ez matrices
-        xcoor = np.linspace(self.domain.min_x, self.domain.max_x, nxp1)
-        ycoor = np.linspace(self.domain.min_y, self.domain.max_y, nyp1)
+        xcoor = np.linspace(self.domain.min_x, self.domain.max_x, nxp1, endpoint=False)
+        ycoor = np.linspace(self.domain.min_y, self.domain.max_y, nyp1, endpoint=False)
         
         # TMz components
         if impressed_J[0].direction[0] is 'z':
@@ -554,11 +556,11 @@ class FDTD2D:
                 
         # Setting the total electric field according to user's domain
         self.et = self.et[np.ix_(
-            np.nonzero(np.logical_and(xcoor > -lx/2, xcoor <= lx/2))[0], 
-            np.nonzero(np.logical_and(ycoor > -ly/2, ycoor <= ly/2))[0], 
+            np.nonzero(np.logical_and(xcoor >= -lx/2, xcoor < lx/2))[0], 
+            np.nonzero(np.logical_and(ycoor >= -ly/2, ycoor < ly/2))[0], 
             range(self.f.size))]
-        self.x = xcoor[np.logical_and(xcoor > -lx/2, xcoor <= lx/2)]
-        self.y = ycoor[np.logical_and(ycoor > -ly/2, ycoor <= ly/2)]
+        self.x = xcoor[np.logical_and(xcoor >= -lx/2, xcoor < lx/2)]
+        self.y = ycoor[np.logical_and(ycoor >= -ly/2, ycoor < ly/2)]
         
         self.epsr = np.copy(epsr)
         self.sig = np.copy(sig)
@@ -568,6 +570,12 @@ class FDTD2D:
    
     def get_intern_coordinates(self):
         return np.copy(self.x), np.copy(self.y)
+    
+    def compute_intern_coordinates(self):
+        lx, ly = self.domain.I*self.domain.dx, self.domain.J*self.domain.dy
+        x = np.linspace(-lx/2,lx/2,self.domain.I,endpoint=False)
+        y = np.linspace(-ly/2,ly/2,self.domain.J,endpoint=False)
+        return x,y
         
     def save_field_figure(self, filename, fileformat = '.eps'):
         for indx in range(self.f.size):
