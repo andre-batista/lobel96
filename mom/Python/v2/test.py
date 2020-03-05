@@ -5,9 +5,10 @@ import model as md
 ## DEFINE PARAMETERS
 R_obs, Lx, Ly = 3., 2., 2.
 E0 = 1
-L = 1 # Points measured from phi=0
+L = 3 # Points measured from phi=0
 M = 16
 f = 300e6
+# f = np.array([300e6,400e6,500e6,600e6])
 Nx, Ny = 60, 60 # (DOI size is NxxNy)
 eps_obj = 3.2 # Relative permittivity of the object
 epsb    = 1 # Relative permittivity of background
@@ -28,3 +29,4 @@ eps_r[(x**2+ y**2) <= 0.5**2] = eps_obj
 sig[(x**2+ y**2) <= 0.5**2]   = sig_obj
 
 experiment.solve(epsilon_r=eps_r,sigma=sig)
+experiment.plot_total_field()

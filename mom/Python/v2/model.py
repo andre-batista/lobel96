@@ -22,7 +22,7 @@ import domain as dm
 from joblib import Parallel, delayed
 import multiprocessing
 import matplotlib as mpl
-mpl.use('Agg') # Avoiding error when using ssh protocol
+# mpl.use('Agg') # Avoiding error when using ssh protocol
 import matplotlib.pyplot as plt
 
 class Model:
@@ -73,7 +73,7 @@ class Model:
     def solve(self,epsilon_r=None,sigma=None,frequencies=None,
               maximum_iterations=None, tolerance=None,file_name=None,
               file_path=''):
-        """Solve the scattered field for a given dielectric map. Either 
+        """ Solve the scattered field for a given dielectric map. Either 
         epsilon_r or sigma or both matrices must be given. You may or not give
         a new single or a set of frequencies. If you haven't given yet, you
         must do it now. You may change the maximum number of iterations and
@@ -177,20 +177,29 @@ class Model:
             ## Scattered Field
             Zscat = -1j*kb*np.pi*an/2*spc.jv(1,kb*an)*spc.hankel2(0,kb*Rscat) # Ns x N^2
             Esc_z = Zscat@J  # Ns x Ni
+            Et = J/np.tile(Xr.reshape((-1,1)),(1,self.domain.L))
         
         else:
             
             Esc_z = np.zeros((self.domain.M,self.domain.L,self.f.size),
                              dtype=complex)
+            Et = np.zeros((Nx*Ny,self.domain.L,self.f.size),dtype=complex)
             
             for f in range(self.f.size):
                 Zscat = (-1j*kb[f]*np.pi*an/2*spc.jv(1,kb[f]*an)
                          * spc.hankel2(0,kb[f]*Rscat))
                 Esc_z[:,:,f] = Zscat@J[:,:,f]
+                Et[:,:,f] = J[:,:,f]/np.tile(Xr[:,:,f].reshape((-1,1)),
+                                             (1,self.domain.L))
         
         if file_name is not None:
-            self.__save_data(dx,dy,x,y,Ei,Esc_z,Zscat,lambda_b,kb,epsilon_r,
+            self.__save_data(dx,dy,x,y,Ei,Esc_z,Et,Zscat,lambda_b,kb,epsilon_r,
                              sigma,file_name,file_path)
+        
+        if MONO_FREQUENCY:
+            self.Et = np.copy(Et.reshape((Nx,Ny,self.domain.L)))
+        else:
+            self.Et = np.copy(Et.reshape((Nx,Ny,self.domain.L,self.f.size)))
         
         return Esc_z
         
@@ -334,7 +343,7 @@ class Model:
 
         return e
 
-    def __save_data(self,dx,dy,x,y,Ei,Es,Zscat,lambda_b,kb,epsilon_r,sigma,
+    def __save_data(self,dx,dy,x,y,Ei,Es,Et,Zscat,lambda_b,kb,epsilon_r,sigma,
                     filename,filepath):
         """ Save simulation data in a pickle file."""
         
@@ -348,6 +357,7 @@ class Model:
             'x':x, 'y':y,
             'incident_field':Ei,
             'scattered_field':Es,
+            'total_field':Et,
             'green_function_s':Zscat,
             'wavelength':lambda_b,
             'wavenumber':kb,
@@ -361,7 +371,124 @@ class Model:
         
         with open(filepath + filename,'wb') as datafile:
             pickle.dump(data,datafile)
+
+    def plot_total_field(self,file_name=None,file_path='',file_format='png',
+                         frequency_index=None,source_index=None):
+
+        xmin, xmax = get_bounds(self.domain.Lx)
+        ymin, ymax = get_bounds(self.domain.Ly)
+        lambda_b = get_wavelength(self.f,epsilon_r=self.epsilon_rb)
         
+        xmin, xmax = xmin/lambda_b, xmax/lambda_b
+        ymin, ymax = ymin/lambda_b, ymax/lambda_b
+      
+        if frequency_index is not None and source_index is not None:
+            
+            plt.imshow(np.abs(self.Et[:,:,source_index,frequency_index]),
+                       extent=[xmin[frequency_index],xmax[frequency_index],
+                               ymin[frequency_index],ymax[frequency_index]])
+            plt.title('Intern field, Source = %d' %(source_index+1) 
+                      + ', Frequency = %.3f' %(self.f[frequency_index]/1e9) 
+                      + ' [GHz]')
+            
+            plt.xlabel(r'x [$\lambda_b$]')
+            plt.ylabel(r'y [$\lambda_b$]')
+            cbar = plt.colorbar()
+            cbar.set_label(r'$|E_z^t|$ [V/m]')
+             
+        elif source_index is not None and isinstance(self.f,float):
+            
+            plt.imshow(np.abs(self.Et[:,:,source_index]),
+                       extent=[xmin,xmax,ymin,ymax])
+            plt.title('Intern field, Source = %d' %(source_index+1) 
+                       + ', Frequency = %.3f' %(self.f/1e9) + ' [GHz]')
+            
+            plt.xlabel(r'x [$\lambda_b$]')
+            plt.ylabel(r'y [$\lambda_b$]')
+            cbar = plt.colorbar()
+            cbar.set_label(r'$|E_z^t|$ [V/m]')
+            
+        elif source_index is None and isinstance(self.f,float):
+            
+            fig = plt.figure()
+            nrow = np.floor(np.sqrt(self.domain.L)).astype(int)
+            ncol = np.ceil(self.domain.L/nrow).astype(int)
+            for ifig in range(self.domain.L):
+                ax = fig.add_subplot(nrow, ncol, ifig+1)
+                ax.imshow(np.abs(self.Et[:,:,ifig]),extent=[xmin,xmax,ymin,ymax])
+                ax.set_xlabel(r'x [$\lambda_b$]')
+                ax.set_ylabel(r'y [$\lambda_b$]')
+                cbar = plt.colorbar(ax=ax)
+                cbar.set_label(r'$|E_z^t|$ [V/m]')
+                ax.set_title('Intern field, Source = %d' %(ifig+1) 
+                             + ', Frequency = %.3f' %(self.f/1e9) + ' [GHz]')
+                
+        elif source_index is None and frequency_index is None:
+            
+            fig = []
+            nrow = np.floor(np.sqrt(self.domain.L)).astype(int)
+            ncol = np.ceil(self.domain.L/nrow).astype(int)
+            for f in range(self.f.size):
+                fig.append(plt.figure())
+                for ifig in range(self.domain.L):
+                    ax = fig[-1].add_subplot(nrow, ncol, ifig+1)
+                    ax.imshow(np.abs(self.Et[:,:,ifig,f]),
+                              extent=[xmin[f],xmax[f],ymin[f],ymax[f]])
+                    ax.set_xlabel(r'x [$\lambda_b$]')
+                    ax.set_ylabel(r'y [$\lambda_b$]')
+                    cbar = plt.colorbar()
+                    cbar.set_label(r'$|E_z^t|$ [V/m]')
+                    ax.set_title('Intern field, Source = %d' %(ifig+1) 
+                                 + ', Frequency = %.3f' %(self.f[f]/1e9) 
+                                 + ' [GHz]')
+        
+        else:
+            
+            fig = plt.figure()
+            nrow = np.floor(np.sqrt(len(self.domain.L))).astype(int)
+            ncol = np.ceil(self.domain.L/nrow).astype(int)
+            for ifig in range(self.domain.L):
+                ax = fig.add_subplot(nrow, ncol, ifig+1)
+                ax.imshow(np.abs(self.Et[:,:,ifig,frequency_index]),
+                          extent=[xmin[frequency_index],xmax[frequency_index],
+                                  ymin[frequency_index],ymax[frequency_index]])
+                ax.set_xlabel(r'x [$\lambda_b$]')
+                ax.set_ylabel(r'y [$\lambda_b$]')
+                cbar = plt.colorbar()
+                cbar.set_label(r'$|E_z^t|$ [V/m]')
+                ax.set_title('Intern field, Source = %d' %(ifig+1) 
+                             + ', Frequency = %.3f' %(self.f[frequency_index]
+                                                      /1e9) 
+                             + ' [GHz]')
+        
+        if ((frequency_index is not None and source_index is not None)
+            or (source_index is not None and isinstance(self.f,float))):
+            
+            if file_name is None:
+                plt.show()
+            else:
+                plt.savefig(file_path+file_name,format=file_format)
+                plt.close()
+        
+        elif isinstance(fig,list):
+            
+            if file_name is None:
+                for i in range(len(fig)):
+                    fig[i].show()
+            else:
+                for i in range(len(fig)):
+                    fig[i].savefig(file_path+file_name,format=file_format)
+                plt.close()
+        
+        else:
+            
+            if file_name is None:
+                plt.show()
+            else:
+                plt.savefig(file_path+file_name,format=file_format)
+                plt.close()
+
+     
 def get_angles(n_samples):
     """ Compute angles [rad] in a circular array of points equaly spaced."""
     return np.arange(0,2*np.pi,2*np.pi/n_samples)
