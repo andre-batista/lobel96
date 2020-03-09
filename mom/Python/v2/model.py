@@ -177,7 +177,7 @@ class Model:
             ## Scattered Field
             Zscat = -1j*kb*np.pi*an/2*spc.jv(1,kb*an)*spc.hankel2(0,kb*Rscat) # Ns x N^2
             Esc_z = Zscat@J  # Ns x Ni
-            Et = J/np.tile(Xr.reshape((-1,1)),(1,self.domain.L))
+            Et = J
         
         else:
             
@@ -189,8 +189,9 @@ class Model:
                 Zscat = (-1j*kb[f]*np.pi*an/2*spc.jv(1,kb[f]*an)
                          * spc.hankel2(0,kb[f]*Rscat))
                 Esc_z[:,:,f] = Zscat@J[:,:,f]
-                Et[:,:,f] = J[:,:,f]/np.tile(Xr[:,:,f].reshape((-1,1)),
-                                             (1,self.domain.L))
+                Et[:,:,f] = J[:,:,f]
+                # Et[:,:,f] = J[:,:,f]/np.tile(Xr[:,:,f].reshape((-1,1)),
+                #                              (1,self.domain.L))
         
         if file_name is not None:
             self.__save_data(dx,dy,x,y,Ei,Esc_z,Et,Zscat,lambda_b,kb,epsilon_r,
@@ -374,7 +375,8 @@ class Model:
 
     def plot_total_field(self,file_name=None,file_path='',file_format='png',
                          frequency_index=None,source_index=None):
-
+        """ Plot the fields from last simulation."""
+        
         xmin, xmax = get_bounds(self.domain.Lx)
         ymin, ymax = get_bounds(self.domain.Ly)
         lambda_b = get_wavelength(self.f,epsilon_r=self.epsilon_rb)
@@ -410,18 +412,21 @@ class Model:
             
         elif source_index is None and isinstance(self.f,float):
             
-            fig = plt.figure()
             nrow = np.floor(np.sqrt(self.domain.L)).astype(int)
             ncol = np.ceil(self.domain.L/nrow).astype(int)
+            fig = plt.figure(figsize=(int(ncol*3),nrow*3))
             for ifig in range(self.domain.L):
                 ax = fig.add_subplot(nrow, ncol, ifig+1)
-                ax.imshow(np.abs(self.Et[:,:,ifig]),extent=[xmin,xmax,ymin,ymax])
+                fig.subplots_adjust(left=.125, bottom=.1, right=.9, top=.9, 
+                                    wspace=.9, hspace=.2)
+                temp = ax.imshow(np.abs(self.Et[:,:,ifig]),extent=[xmin,xmax,
+                                                                   ymin,ymax])
                 ax.set_xlabel(r'x [$\lambda_b$]')
                 ax.set_ylabel(r'y [$\lambda_b$]')
-                cbar = plt.colorbar(ax=ax)
+                cbar = plt.colorbar(ax=ax,mappable=temp,fraction=0.046,pad=0.04)
                 cbar.set_label(r'$|E_z^t|$ [V/m]')
                 ax.set_title('Intern field, Source = %d' %(ifig+1) 
-                             + ', Frequency = %.3f' %(self.f/1e9) + ' [GHz]')
+                             + ', \nFrequency = %.3f' %(self.f/1e9) + ' [GHz]')
                 
         elif source_index is None and frequency_index is None:
             
@@ -429,35 +434,42 @@ class Model:
             nrow = np.floor(np.sqrt(self.domain.L)).astype(int)
             ncol = np.ceil(self.domain.L/nrow).astype(int)
             for f in range(self.f.size):
-                fig.append(plt.figure())
+                fig.append(plt.figure(figsize=(int(ncol*3),nrow*3)))
                 for ifig in range(self.domain.L):
                     ax = fig[-1].add_subplot(nrow, ncol, ifig+1)
-                    ax.imshow(np.abs(self.Et[:,:,ifig,f]),
-                              extent=[xmin[f],xmax[f],ymin[f],ymax[f]])
+                    fig[-1].subplots_adjust(left=.125, bottom=.1, right=.9, 
+                                            top=.9, wspace=.9, hspace=.2)
+                    temp = ax.imshow(np.abs(self.Et[:,:,ifig,f]),extent=
+                                     [xmin[f],xmax[f],ymin[f],ymax[f]])
                     ax.set_xlabel(r'x [$\lambda_b$]')
                     ax.set_ylabel(r'y [$\lambda_b$]')
-                    cbar = plt.colorbar()
+                    cbar = plt.colorbar(ax=ax,mappable=temp,fraction=0.046,
+                                        pad=0.04)
                     cbar.set_label(r'$|E_z^t|$ [V/m]')
                     ax.set_title('Intern field, Source = %d' %(ifig+1) 
-                                 + ', Frequency = %.3f' %(self.f[f]/1e9) 
+                                 + ', \nFrequency = %.3f' %(self.f[f]/1e9) 
                                  + ' [GHz]')
         
         else:
             
-            fig = plt.figure()
-            nrow = np.floor(np.sqrt(len(self.domain.L))).astype(int)
+            nrow = np.floor(np.sqrt(self.domain.L)).astype(int)
             ncol = np.ceil(self.domain.L/nrow).astype(int)
+            fig = plt.figure(figsize=(int(ncol*3),nrow*3))
             for ifig in range(self.domain.L):
                 ax = fig.add_subplot(nrow, ncol, ifig+1)
-                ax.imshow(np.abs(self.Et[:,:,ifig,frequency_index]),
-                          extent=[xmin[frequency_index],xmax[frequency_index],
-                                  ymin[frequency_index],ymax[frequency_index]])
+                temp = ax.imshow(np.abs(self.Et[:,:,ifig,frequency_index]),
+                                 extent=[xmin[frequency_index],
+                                         xmax[frequency_index],
+                                         ymin[frequency_index],
+                                         ymax[frequency_index]])
+                fig.subplots_adjust(left=.125, bottom=.1, right=.9, 
+                                    top=.9, wspace=.9, hspace=.2)
                 ax.set_xlabel(r'x [$\lambda_b$]')
                 ax.set_ylabel(r'y [$\lambda_b$]')
-                cbar = plt.colorbar()
+                cbar = plt.colorbar(ax=ax,mappable=temp,fraction=0.046,pad=0.04)
                 cbar.set_label(r'$|E_z^t|$ [V/m]')
                 ax.set_title('Intern field, Source = %d' %(ifig+1) 
-                             + ', Frequency = %.3f' %(self.f[frequency_index]
+                             + ', \nFrequency = %.3f' %(self.f[frequency_index]
                                                       /1e9) 
                              + ' [GHz]')
         
@@ -471,13 +483,13 @@ class Model:
                 plt.close()
         
         elif isinstance(fig,list):
-            
             if file_name is None:
                 for i in range(len(fig)):
-                    fig[i].show()
+                    plt.show(fig[i])
             else:
                 for i in range(len(fig)):
-                    fig[i].savefig(file_path+file_name,format=file_format)
+                    fig[i].savefig(file_path+file_name+'_%d' %i,
+                                   format=file_format)
                 plt.close()
         
         else:
@@ -488,7 +500,144 @@ class Model:
                 plt.savefig(file_path+file_name,format=file_format)
                 plt.close()
 
-     
+    def draw_setup(self,epsr=None,sig=None,file_name=None,file_path='',
+                   file_format='png'):
+        """ Draw domain, sources and probes."""
+        
+        if epsr is None and sig is None:
+            Nx, Ny = 100, 100
+        elif epsr is not None:
+            Nx, Ny = epsr.shape
+        else:
+            Nx, Ny = sig.shape
+        
+        dx, dy = self.domain.Lx/Nx, self.domain.Ly/Ny
+        min_radius = np.sqrt((self.domain.Lx/2)**2+(self.domain.Ly/2)**2)
+        
+        if epsr is None:
+            epsr = self.epsilon_rb*np.ones((Nx,Ny))
+            
+        if sig is None:
+            sig = self.sigma_b*np.ones((Nx,Ny))
+            
+        if self.domain.R_obs > min_radius:
+            xmin,xmax = -1.05*self.domain.R_obs, 1.05*self.domain.R_obs
+            ymin,ymax = -1.05*self.domain.R_obs, 1.05*self.domain.R_obs
+        else:
+            xmin, xmax = -self.domain.Lx/2, self.domain.Lx/2
+            ymin, ymax = -self.domain.Ly/2, self.domain.Ly/2
+            
+        xm, ym = get_coordinates(self.domain.R_obs,self.domain.M)
+        xl, yl = get_coordinates(self.domain.R_obs,self.domain.L)
+        x, y = get_domain_coordinates(dx,dy,xmin,xmax,ymin,ymax)    
+        
+        epsilon_r = self.epsilon_rb*np.ones(x.shape)
+        sigma = self.sigma_b*np.ones(x.shape)
+        
+        epsilon_r[np.ix_(np.logical_and(x[0,:] > -self.domain.Lx/2,
+                                        x[0,:] < self.domain.Lx/2),
+                         np.logical_and(y[:,0] > -self.domain.Ly/2,
+                                        y[:,0] < self.domain.Ly/2))] = epsr
+        
+        sigma[np.ix_(np.logical_and(x[0,:] > -self.domain.Lx/2,
+                                    x[0,:] < self.domain.Lx/2),
+                     np.logical_and(y[:,0] > -self.domain.Ly/2,
+                                    y[:,0] < self.domain.Ly/2))] = sig
+        
+        fig = plt.figure(figsize=(10,4))
+        fig.subplots_adjust(left=.125, bottom=.1, right=.9, top=.9, wspace=.5, 
+                            hspace=.2)
+        
+        ax = fig.add_subplot(1,2,1)
+        
+        if isinstance(self.f,float):
+            lambda_b = get_wavelength(self.f,epsilon_r=self.epsilon_rb)
+            
+            im1 = ax.imshow(epsilon_r,extent=[xmin/lambda_b,xmax/lambda_b,
+                                              ymin/lambda_b,ymax/lambda_b])
+            
+            ax.plot(np.array([-self.domain.Lx/2/lambda_b,-self.domain.Lx/2/lambda_b,
+                              self.domain.Lx/2/lambda_b,self.domain.Lx/2/lambda_b,
+                              -self.domain.Lx/2/lambda_b]),
+                    np.array([-self.domain.Ly/2/lambda_b,self.domain.Ly/2/lambda_b,
+                              self.domain.Ly/2/lambda_b,-self.domain.Ly/2/lambda_b,
+                              -self.domain.Ly/2/lambda_b]),'k--')
+            
+            lg_m, = ax.plot(xm/lambda_b,ym/lambda_b,'ro',label='Probe')
+            lg_l, = ax.plot(xl/lambda_b,yl/lambda_b,'go',label='Source')
+            
+            ax.set_xlabel(r'x [$\lambda_b$]')
+            ax.set_ylabel(r'y [$\lambda_b$]')
+            
+        else:
+            im1 = ax.imshow(epsilon_r,extent=[xmin,xmax,ymin,ymax])
+            
+            ax.plot(np.array([-self.domain.Lx/2,-self.domain.Lx/2,
+                              self.domain.Lx/2,self.domain.Lx/2,
+                              -self.domain.Lx/2]),
+                    np.array([-self.domain.Ly/2,self.domain.Ly/2,
+                              self.domain.Ly/2,-self.domain.Ly/2,
+                              -self.domain.Ly/2]),'k--')
+
+            lg_m, = ax.plot(xm,ym,'ro',label='Probe')
+            lg_l, = ax.plot(xl,yl,'go',label='Source')
+            
+            ax.set_xlabel('x [m]')
+            ax.set_ylabel('y [m]')
+            
+        plt.legend(handles=[lg_m,lg_l],loc='upper right')
+        cbar = fig.colorbar(im1,fraction=0.046,pad=0.04)
+        cbar.set_label(r'$\epsilon_r$')
+        ax.set_title('Relative Permittivity')
+
+        ax = fig.add_subplot(1,2,2)
+
+        if isinstance(self.f,float):
+            lambda_b = get_wavelength(self.f,epsilon_r=self.epsilon_rb)
+            
+            im1 = ax.imshow(sigma,extent=[xmin/lambda_b,xmax/lambda_b,
+                                          ymin/lambda_b,ymax/lambda_b])
+            
+            ax.plot(np.array([-self.domain.Lx/2/lambda_b,-self.domain.Lx/2/lambda_b,
+                              self.domain.Lx/2/lambda_b,self.domain.Lx/2/lambda_b,
+                              -self.domain.Lx/2/lambda_b]),
+                    np.array([-self.domain.Ly/2/lambda_b,self.domain.Ly/2/lambda_b,
+                              self.domain.Ly/2/lambda_b,-self.domain.Ly/2/lambda_b,
+                              -self.domain.Ly/2/lambda_b]),'k--')
+            
+            lg_m, = ax.plot(xm/lambda_b,ym/lambda_b,'ro',label='Probe')
+            lg_l, = ax.plot(xl/lambda_b,yl/lambda_b,'go',label='Source')
+            
+            ax.set_xlabel(r'x [$\lambda_b$]')
+            ax.set_ylabel(r'y [$\lambda_b$]')
+            
+        else:
+            im1 = ax.imshow(sigma,extent=[xmin,xmax,ymin,ymax])
+            
+            ax.plot(np.array([-self.domain.Lx/2,-self.domain.Lx/2,
+                              self.domain.Lx/2,self.domain.Lx/2,
+                              -self.domain.Lx/2]),
+                    np.array([-self.domain.Ly/2,self.domain.Ly/2,
+                              self.domain.Ly/2,-self.domain.Ly/2,
+                              -self.domain.Ly/2]),'k--')
+
+            lg_m, = ax.plot(xm,ym,'ro',label='Probe')
+            lg_l, = ax.plot(xl,yl,'go',label='Source')
+            
+            ax.set_xlabel('x [m]')
+            ax.set_ylabel('y [m]')
+            
+        cbar = fig.colorbar(im1,fraction=0.046,pad=0.04)
+        cbar.set_label(r'$\sigma$ [S/m]')
+        ax.set_title('Conductivity')
+        plt.legend(handles=[lg_m,lg_l],loc='upper right')
+        
+        if file_name is None:
+            plt.show()
+        else:
+            plt.savefig(file_path+file_name,format=file_format)
+            plt.close()
+
 def get_angles(n_samples):
     """ Compute angles [rad] in a circular array of points equaly spaced."""
     return np.arange(0,2*np.pi,2*np.pi/n_samples)
