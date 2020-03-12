@@ -29,5 +29,5 @@ eps_r[(x**2+ y**2) <= 0.5**2] = eps_obj
 sig[(x**2+ y**2) <= 0.5**2]   = sig_obj
 
 # experiment.draw_setup(epsr=eps_r,sig=sig)
-experiment.solve(epsilon_r=eps_r,sigma=sig)
+experiment.solve(epsilon_r=eps_r,sigma=sig,PRINT_INFO=True)
 experiment.plot_total_field(frequency_index=3)

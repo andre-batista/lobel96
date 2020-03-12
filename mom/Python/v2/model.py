@@ -25,6 +25,8 @@ import matplotlib as mpl
 # mpl.use('Agg') # Avoiding error when using ssh protocol
 import matplotlib.pyplot as plt
 
+MEMORY_LIMIT = 16e9
+
 class Model:
     """ MODEL: 
         Class to represent a microwave imaging problem with a solver for 
@@ -72,12 +74,20 @@ class Model:
             
     def solve(self,epsilon_r=None,sigma=None,frequencies=None,
               maximum_iterations=None, tolerance=None,file_name=None,
-              file_path=''):
+              file_path='',COMPUTE_INTERN_FIELD=True,PRINT_INFO=False):
         """ Solve the scattered field for a given dielectric map. Either 
         epsilon_r or sigma or both matrices must be given. You may or not give
         a new single or a set of frequencies. If you haven't given yet, you
         must do it now. You may change the maximum number of iterations and
         tolerance error."""
+        
+        if PRINT_INFO:
+            print('==========================================================')
+            print('Method of Moments (MoM)\nConjugate Gradient-Fast Fourier Trasnsform (CG-FFT)')
+        if self.model_name is not None:
+            print('Model name: ' + self.model_name)
+        elif file_name is not None:
+            print('Model name: ' + file_name)
         
         # Check inputs
         if epsilon_r is None and sigma is None:
@@ -145,56 +155,70 @@ class Model:
         if MONO_FREQUENCY:
             tic = time.time()
             J,niter,error = self.__CG_FFT(Z,b,Nx,Ny,self.domain.L,Xr,
-                                          self.max_it,self.TOL)
+                                          self.max_it,self.TOL,
+                                          PRINT_INFO)
             time_cg_fft=time.time()-tic
+            if PRINT_INFO:
+                print('Execution time: %.2f' %time_cg_fft + ' [sec]')
             
         else:
             J = np.zeros((Nx*Ny,self.domain.L,self.f.size),dtype=complex)
             niter = np.zeros(self.f.size)
             error = np.zeros((self.max_it,self.f.size))
             num_cores = multiprocessing.cpu_count()
-            results = (Parallel(n_jobs=num_cores)
-                       (delayed(self.__CG_FFT)(np.squeeze(Z[:,:,f]),
-                                               np.squeeze(b[:,:,f]),
-                                               Nx,Ny,self.domain.L,
-                                               np.squeeze(Xr[:,:,f]),
-                                               self.max_it,self.TOL) 
-                        for f in range(self.f.size)))
+                
+            results = (Parallel(n_jobs=num_cores)(delayed(self.__CG_FFT)
+                                                  (np.squeeze(Z[:,:,f]),
+                                                   np.squeeze(b[:,:,f]),
+                                                   Nx,Ny,self.domain.L,
+                                                   np.squeeze(Xr[:,:,f]),
+                                                   self.max_it,self.TOL,False) 
+                                                  for f in range(self.f.size)))
             
             for f in range(self.f.size):
                 J[:,:,f] = results[f][0]
                 niter[f] = results[f][1]
                 error[:,f] = results[f][2]
-        
-        xg = np.tile(xm.reshape((-1,1)),(1,Nx*Ny))
-        yg = np.tile(ym.reshape((-1,1)),(1,Nx*Ny))
-        Rscat = np.sqrt((xg-np.tile(np.reshape(x,(Nx*Ny,1)).T,
-                                    (self.domain.M,1)))**2 
-                        + (yg-np.tile(np.reshape(y,(Nx*Ny,1)).T,
-                                      (self.domain.M,1)))**2) # Ns x N*N
-        
+                print('Frequency: %.3f ' %(self.f[f]/1e9) + '[GHz] - ' 
+                      + 'Number of iterations: %d - ' %(niter[f]+1)
+                      + 'Error: %.3e' %error[-1,f])
+            
         if MONO_FREQUENCY:
             ## Scattered Field
-            Zscat = -1j*kb*np.pi*an/2*spc.jv(1,kb*an)*spc.hankel2(0,kb*Rscat) # Ns x N^2
-            Esc_z = Zscat@J  # Ns x Ni
-            Et = J
+            GS = get_greenfunction(xm,ym,x,y,kb)
+            Esc_z = GS@J  # Ns x Ni
         
         else:
             
             Esc_z = np.zeros((self.domain.M,self.domain.L,self.f.size),
                              dtype=complex)
-            Et = np.zeros((Nx*Ny,self.domain.L,self.f.size),dtype=complex)
+            GS = get_greenfunction(xm,ym,x,y,kb)
             
             for f in range(self.f.size):
-                Zscat = (-1j*kb[f]*np.pi*an/2*spc.jv(1,kb[f]*an)
-                         * spc.hankel2(0,kb[f]*Rscat))
-                Esc_z[:,:,f] = Zscat@J[:,:,f]
-                Et[:,:,f] = J[:,:,f]
-                # Et[:,:,f] = J[:,:,f]/np.tile(Xr[:,:,f].reshape((-1,1)),
-                #                              (1,self.domain.L))
-        
+                Esc_z[:,:,f] = GS[:,:,f]@J[:,:,f]
+                
+        if COMPUTE_INTERN_FIELD:
+            
+            if MONO_FREQUENCY:
+                GD = get_greenfunction(x.reshape(-1),y.reshape(-1),x,y,kb)
+                Et = GD@J
+                
+            else:
+                Et = np.zeros((Nx*Ny,self.domain.L,self.f.size),dtype=complex)
+                if 8*(Nx*Ny)**2*kb.size < MEMORY_LIMIT:
+                    GD = get_greenfunction(x.reshape(-1),y.reshape(-1),x,y,kb)
+                    for f in range(self.f.size):
+                        Et[:,:,f] = GD[:,:,f]@J[:,:,f]
+                else:
+                    for f in range(self.f.size):
+                        GD = get_greenfunction(x.reshape(-1),y.reshape(-1),
+                                               x,y,kb[f])
+                        Et[:,:,f] = GD@J[:,:,f]
+                       
+            Et = Et + Ei
+            
         if file_name is not None:
-            self.__save_data(dx,dy,x,y,Ei,Esc_z,Et,Zscat,lambda_b,kb,epsilon_r,
+            self.__save_data(dx,dy,x,y,Ei,Esc_z,Et,GS,lambda_b,kb,epsilon_r,
                              sigma,file_name,file_path)
         
         if MONO_FREQUENCY:
@@ -265,7 +289,7 @@ class Model:
     
         return Z
         
-    def __CG_FFT(self,Z,b,Nx,Ny,Ni,Xr,max_it,TOL):
+    def __CG_FFT(self,Z,b,Nx,Ny,Ni,Xr,max_it,TOL,PRINT_CONVERGENCE):
         '''
                 Congugate-Gradient Method (CGM)
 
@@ -302,8 +326,11 @@ class Model:
             g = self.__fft_AH(r,Z,Nx,Ny,Ni,Xr) 
     
             error = LA.norm(r)/LA.norm(b) # error tolerance
-            print('%.4e' %error)
             error_res[n] = error
+            
+            if PRINT_CONVERGENCE:
+                print('Iteration %d ' %(n+1) + ' - Error: %.3e' %error)
+            
             if error < TOL: # stopping criteria
                 break
     
@@ -680,3 +707,33 @@ def get_contrast_map(epsilon_r,sigma,epsilon_rb,sigma_b,omega):
                          /(epsilon_rb - 1j*sigma_b/omega[f]/ct.epsilon_0) 
                          - 1)
         return Xr
+    
+def get_greenfunction(xm,ym,x,y,kb):
+
+    Nx, Ny = x.shape
+    M = xm.size
+    dx, dy = x[0,1]-x[0,0], y[1,0]-y[0,0]
+    an = np.sqrt(dx*dy/np.pi) # radius of the equivalent circle
+    
+    if isinstance(kb,float):
+        MONO_FREQUENCY = True
+    else:
+        MONO_FREQUENCY = False
+        
+    xg = np.tile(xm.reshape((-1,1)),(1,Nx*Ny))
+    yg = np.tile(ym.reshape((-1,1)),(1,Nx*Ny))
+    R = np.sqrt((xg-np.tile(np.reshape(x,(Nx*Ny,1)).T,(M,1)))**2 
+                + (yg-np.tile(np.reshape(y,(Nx*Ny,1)).T,(M,1)))**2)
+    
+    if MONO_FREQUENCY: 
+        G = (-1j*kb*np.pi*an/2*spc.jv(1,kb*an) * spc.hankel2(0,kb*R))
+        G[R==0] = 1j/2*(np.pi*kb*an*spc.hankel2(1,kb*an)-2j)
+    
+    else:
+        G = np.zeros((M,Nx*Ny,kb.size),dtype=complex)
+        for f in range(kb.size):
+            aux = (-1j*kb[f]*np.pi*an/2*spc.jv(1,kb[f]*an)*spc.hankel2(0,kb[f]*R))
+            aux[R==0] = 1j/2*(np.pi*kb[f]*an*spc.hankel2(1,kb[f]*an)-2j)
+            G[:,:,f] = aux
+    
+    return G
